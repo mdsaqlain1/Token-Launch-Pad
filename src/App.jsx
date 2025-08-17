@@ -20,7 +20,7 @@ function App() {
   console.log(network, " ", endpoint);
 
   return (
-    <div className="p-2">
+    <div className="my-5">
       <ConnectionProvider endpoint={endpoint}>
         <WalletProvider wallets={[]}>
           <WalletModalProvider>
