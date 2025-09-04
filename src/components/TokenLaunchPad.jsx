@@ -2,12 +2,16 @@ import React, { useState, useMemo } from "react";
 import Card from "./ui/Card";
 import Input from "./ui/Input";
 import Button from "./ui/Button";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { Keypair, SystemProgram, Transaction } from "@solana/web3.js";
+import { MINT_SIZE, TOKEN_PROGRAM_ID, createInitializeMint2Instruction, getMinimumBalanceForRentExemptMint } from "@solana/spl-token";
 
 export const TokenLaunchPad = () => {
+  const wallet = useWallet();
+  const { connection } = useConnection();
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState("");
   const [image, setImage] = useState("");
-  const [initialSupply, setInitialSupply] = useState("");
   const [creating, setCreating] = useState(false);
   const [touched, setTouched] = useState({
     name: false,
@@ -34,13 +38,8 @@ export const TokenLaunchPad = () => {
       e.symbol = "Symbol must be 1–6 letters or numbers";
     if (image && !isValidUrl(image))
       e.image = "Enter a valid URL (http(s)://...)";
-    const n = Number(initialSupply);
-    if (!initialSupply.toString().trim())
-      e.initialSupply = "Initial supply is required";
-    else if (Number.isNaN(n) || n <= 0)
-      e.initialSupply = "Initial supply must be a number greater than 0";
     return e;
-  }, [name, symbol, image, initialSupply]);
+  }, [name, symbol, image]);
 
   const isFormValid = Object.keys(errors).length === 0;
 
@@ -62,11 +61,46 @@ export const TokenLaunchPad = () => {
 
     setCreating(true);
     setTimeout(() => {
-      console.log("Create token", { name, symbol, image, initialSupply });
+      console.log("Create token", { name, symbol, image });
       setCreating(false);
       // reset form if you want
       // setName(''); setSymbol(''); setImage(''); setInitialSupply('')
     }, 700);
+
+    const mintNewToken = async () => {
+      if (!connection) return;
+
+      try {
+        const mintKeypair = Keypair.generate();
+        const lamports = await getMinimumBalanceForRentExemptMint(connection);
+        const transaction = new Transaction().add(
+          SystemProgram.createAccount({
+            fromPubkey: wallet.publicKey,
+                newAccountPubkey: mintKeypair.publicKey,
+                space: MINT_SIZE,
+                lamports,
+                programId: TOKEN_PROGRAM_ID,
+          }),
+          createInitializeMint2Instruction(mintKeypair.publicKey, 9, wallet.publicKey, wallet.publicKey, TOKEN_PROGRAM_ID)
+        );
+        transaction.feePayer = wallet.publicKey;
+        transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+        transaction.partialSign(mintKeypair);
+
+        const signedTransaction = await wallet.signTransaction(transaction);
+        const txId = await connection.sendRawTransaction(signedTransaction.serialize());
+        await connection.confirmTransaction(txId, 'confirmed');
+        console.log("Token minted with address:", mintKeypair.publicKey.toBase58());
+        console.log("Transaction ID:", txId);
+        
+
+      } catch (error) {
+        console.error("Error minting token:", error);
+      }
+    };
+
+    mintNewToken();
+
   };
 
   return (
@@ -135,26 +169,7 @@ export const TokenLaunchPad = () => {
               )}
             </div>
 
-            <div>
-              <label className="text-sm font-medium">Initial Supply</label>
-              <Input
-                value={initialSupply}
-                onChange={(e) => setInitialSupply(e.target.value)}
-                onBlur={() => handleBlur("initialSupply")}
-                placeholder="1000000"
-                type="number"
-                className={
-                  touched.initialSupply && errors.initialSupply
-                    ? "border-destructive"
-                    : ""
-                }
-              />
-              {touched.initialSupply && errors.initialSupply && (
-                <div className="text-xs text-destructive mt-1">
-                  {errors.initialSupply}
-                </div>
-              )}
-            </div>
+            
 
             <div className="pt-4 flex items-center justify-between">
               <div className="text-sm text-muted">
